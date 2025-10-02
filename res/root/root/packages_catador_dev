@@ -1,0 +1,4 @@
+ninja unzip
+lua luajit tree-sitter-lua
+pkgconfig
+

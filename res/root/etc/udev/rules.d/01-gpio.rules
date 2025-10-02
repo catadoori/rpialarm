@@ -1,0 +1,13 @@
+SUBSYSTEM=="vchiq|input", MODE="0777"
+KERNEL=="mouse*|mice|event*",  MODE="0777"
+
+#KERNEL=="gpiomem", MODE="0666"
+#SUBSYSTEM=="bcm2835-gpiomem", KERNEL=="gpiomem", GROUP="gpio", MODE="0660"
+SUBSYSTEM=="gpio", KERNEL=="gpiochip[0-1]", GROUP="gpio", MODE="0660"
+SUBSYSTEM=="gpiomem", GROUP="gpio", MODE="0660"
+
+SUBSYSTEM=="gpio", KERNEL=="gpiochip*", ACTION=="add", PROGRAM="/bin/sh -c 'chown root:gpio /sys/class/gpio/export /sys/class/gpio/unexport ; chmod 220 /sys/class/gpio/export /sys/class/gpio/unexport'"
+SUBSYSTEM=="gpio", KERNEL=="gpio*", ACTION=="add", PROGRAM="/bin/sh -c 'chown root:gpio /sys%p/active_low /sys%p/direction /sys%p/edge /sys%p/value ; chmod 660 /sys%p/active_low /sys%p/direction /sys%p/edge /sys%p/value'"
+
+SUBSYSTEM=="pwm*", PROGRAM="/bin/sh -c 'chown -R root:gpio /sys/class/pwm && chmod -R 770 /sys/class/pwm; chown -R root:gpio /sys/devices/platform/soc/*.pwm/pwm/pwmchip*  && chmod -R 770 /sys/devices/platform/soc/*.pwm/pwm/pwmchip*'"
+

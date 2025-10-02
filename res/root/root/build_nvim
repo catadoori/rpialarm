@@ -1,0 +1,15 @@
+#!/usr/bin/bash
+
+
+target_user=TARGET_USER
+
+su $target_user
+cd /home/${target_user}
+rm neovim_build -rf
+mkdir neovim_build && cd neovim_build
+
+git clone https://aur.archlinux.org/neovim-git.git
+cd neovim-git
+git clone https://github.com/neovim/neovim --single-branch --branch release-0.11
+makepkg --holdver
+

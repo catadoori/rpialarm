@@ -1,0 +1,8 @@
+tree
+cmake make gcc
+gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad
+opencv
+sudo
+fakeroot
+btop
+fmt

@@ -1,0 +1,12 @@
+#!/usr/bin/bash
+
+
+# serial_console="console=serial0,115200 console=tty1"
+# uncomment if you want to enable the serial console.
+
+hostname=kaizer
+target_user=kaizer
+wifi_ssid="your_wifi_name_here"
+wifi_psk="your_wifi_password_here"
+
+

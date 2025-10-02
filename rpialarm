@@ -1,0 +1,218 @@
+#!/usr/bin/bash
+
+# make a ready to use image for rpi zero 2w and write it to sd card
+# default config file is 'rpialarm.conf'
+
+function on_error() {
+    echo "fatal error: $1"
+    exit 1
+}
+
+[ `pwd` == "/" ] &&  on_error "don't run this script in the root directory."
+# FIXME [ ! `id -u` == "0" ] && on_error "Run this script as root"
+
+if [ "$#" -gt 2 ] || [ "$#" -eq 0 ]; then
+    echo "wrong arguments given. invocation is $0 device [config file]"
+    exit 1
+fi
+
+config="rpialarm.conf"
+if [ $2 ]; then
+    config=$2
+fi
+[  -f $config ] || on_error "could not find config file $config"
+echo "using config file $config"
+
+target_user=dorz
+
+. $config
+
+[ $hostname ] || on_error "no hostname provided"
+[ $target_user ] || on_error "no target user provided"
+[ $wifi_ssid ] || on_error "no wifi ssid provided"
+[ $wifi_psk ] || on_error "no wifi psk (\"wifi password\") provided"
+device=$1
+
+echo "This script will erase all data that is currently on device $1."
+read -p "Are you sure this is what you want (y/n)? " input
+case "$input" in
+    y|Y ) ;;
+    *) echo "exiting without action."; exit 1
+esac
+
+[ ! -e ${device} ] && on_error "'${device}' is not existing"
+
+function unmount() {
+    if [ ! $1 ]; then
+        on_error "no arg given for unmount"
+    fi
+    path="`pwd`/$1"
+    res=`mount | grep $path`
+    if [ ! -z "$res" ]; then
+        umount $path || on_error "on unmounting $path"
+    fi
+}
+
+
+arch_url="http://os.archlinuxarm.org/os/"
+arch_package="ArchLinuxARM-rpi-armv7-latest.tar.gz"
+
+download_url="${arch_url}${arch_package}"
+img_url=http://ca.us.mirror.archlinuxarm.org/os/ArchLinuxARM-rpi-armv7-latest.tar.gz
+img_gz=ArchLinuxARM-rpi-armv7-latest.tar.gz
+
+if [ ! -f $arch_package ]; then
+    curl -L $download_url -o $img_gz || on_error
+    curl -L ${download_url}.sig -o ${img_gz}.md5 || on_error
+fi
+unmount boot
+unmount root
+boot_par=${device}1
+root_par=${device}2
+data_par=${device}3
+
+
+if [[ -d boot/ ]]; then
+    rmdir boot || on_error "on removing boot" 
+fi
+if [[ -d root/ ]]; then
+    rmdir root || on_error "on removing root" 
+fi
+
+
+echo "getting partition list"
+parts_lines=`parted -s ${device} print -m` || "on getting partiton list"
+parts=`echo "$parts_lines" | grep -o ^[0-9]`
+for i in $parts
+do
+    echo "deleting existing partition $i..."
+    parted -s ${device} rm $i || on_error "on deleting partition $i"
+done
+
+echo "creating partitions"
+parted -s ${device} mkpart primary "" fat32 2048s 200mib || on_error "on creating partiton 1"
+parted -s ${device} mkpart primary "" ext4 200mib 8gib || on_error "on creating partiton 2"
+parted -s ${device} mkpart primary "" ext4 8gib 100% || on_error "on creating partiton 3"
+
+echo "creating boot fs..."
+yes | mkfs.vfat ${boot_par} > /dev/null 2>&1 || on_error "on making boot fs"
+echo "creating root fs..."
+yes | mkfs.ext4 ${root_par} > /dev/null 2>&1 || on_error "on making root fs"
+echo "creating data fs..."
+yes | mkfs.ext4 ${data_par} > /dev/null 2>&1 || on_error "on making data fs"
+
+echo "mounting boot and root"
+mkdir boot root || on_error
+mount ${boot_par} boot -O flush || on_error
+mount ${root_par} root || on_error
+
+echo "unpacking image..."
+time_write_start=`date +%s`
+bsdtar -xpf $img_gz -C root || on_error
+sync || on_error
+time_write_end=`date +%s`
+duration=$(( $time_write_end - $time_write_start))
+size_root=`du -s root/ | grep -o [0-9]*`
+[ $size_root -ne 0 ] || on_error "size can't be zero"
+echo "size: $size_root, duration: $duration"
+echo "$device write speed: $(( size_root / $duration )) kiB / sec"
+mv root/boot/* boot || on_error
+
+echo "patching"
+echo $hostname > root/etc/hostname
+cat > root/etc/wpa_supplicant/wpa_supplicant-wlan0.conf <<EOF || on_error
+network={
+    ssid="$wifi_ssid"
+    psk="$wifi_psk"
+}
+EOF
+
+cat > root/etc/systemd/network/wlan0.network <<EOF || on_error "creating wlan0.network"
+[Match]
+Name=wlan0
+[Network]
+DHCP=yes
+EOF
+
+cat > root/usr/lib/systemd/system/wpa_supplicant\@.service <<EOF ||  \
+    on_error "writing wpa_supplicant\@.service"
+[Unit]
+Description=WPA supplicant daemon (interface-specific version)
+Requires=sys-subsystem-net-devices-%i.device
+After=sys-subsystem-net-devices-%i.device
+Before=network.target
+Wants=network.target
+
+# NetworkManager users will probably want the dbus version instead.
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/wpa_supplicant -c/etc/wpa_supplicant/wpa_supplicant-%I.conf -i%I
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+if [ true ]; then
+cat > root/usr/lib/systemd/system/bootstrap.service <<EOF || \
+    on_error "on creating bootstrap.service"
+[Unit]
+Description=Bootstrap script
+[Service]
+Type=simple
+ExecStart=/usr/bin/bash /root/bootstrap
+StandardOutput=append:/var/log/bootstrap.log
+StandardError=append:/var/log/bootstrap.log
+
+[Install]
+WantedBy=multi-user.target  
+EOF
+
+ln -s /usr/lib/systemd/system/bootstrap.service \
+    root/etc/systemd/system/multi-user.target.wants \
+    || on_error "on linking bootstrap.service"
+fi
+
+cp res/boot/* boot/ || error
+
+# echo 'options brcmfmac feature_disable=0x82000' >> root/etc/modprobe.d/brcmfmac.conf
+# https://github.com/RPi-Distro/firmware-nonfree/issues/34#issue-1523890517
+# https://forums.raspberrypi.com/viewtopic.php?t=384103
+# or try
+#     brcmfmac.roamoff=1 brcmfmac.feature_disable=0x82000
+# in cmdline.exe
+
+ln -s /usr/lib/systemd/system/wpa_supplicant\@.service \
+    root/etc/systemd/system/multi-user.target.wants/wpa_supplicant\@wlan0.service \
+    || on_error "linking wpa_supplicant\@.service"
+
+ln -s /usr/share/zoneinfo/Europe/Berlin root/etc/localtime || on_error
+
+cp res/boot/* boot/ || error
+sed -i s/SERIAL_CONSOLE/${serial_console}/ boot/cmdline.txt || error
+if [ $serial_console ]; then
+    echo "enable_uart=1" >> boot/config.txt || error
+echo 
+fi
+
+ln -s /usr/lib/systemd/system/serial-getty@.service \
+    root/etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service \
+    || on_error "linking serial-getty@ttyS0.service"
+
+cp -r res/root/etc/. root/etc || on_error
+cp -r res/root/root/. root/root || on_error 
+# cp res/root/root/bootstrap root/root || on_error 
+sed -i s/TARGET_USER/${target_user}/g root/root/bootstrap || on_error
+
+cp root/etc/makepkg.conf root/etc/makepkg.conf.orig || error
+sed -i s/-mno-omit-leaf-frame-pointer//g root/etc/makepkg.conf
+
+mkdir root/home/${target_user} -p
+chown 1000:1000 root/home/${target_user}
+sed -i s/TARGET_USER/${target_user}/g root/etc/passwd
+sed -i s/TARGET_USER/${target_user}/g root/etc/shadow
+cp -r res/root/home/user/. root/home/${target_user}
+rm -rf root/home/alarm
+echo "ejecting ${device}..."
+eject ${device}
+
