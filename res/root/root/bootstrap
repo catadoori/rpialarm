@@ -45,10 +45,11 @@ pacman -S --needed --noconfirm `cat /root/packages_catador_dev`
 
 log 'building ncnn...'
 sudo -u $target_user bash -c "cd /home/${target_user} && \
-           git clone https://github.com/Tencent/ncnn.git && \
-           cd ncnn && mkdir build && \
+           git clone https://github.com/Tencent/ncnn.git --quiet && \
+           cd ncnn && mkdir build && cd build && \
            cmake .. -DCMAKE_TOOLCHAIN_FILE=../toolchains/pi3.toolchain.cmake \
-                    -DCMAKE_INSTALL_PREFIX=/usr/local && make -j2"
+                    -DCMAKE_RULE_MESSAGES=0 \
+                    -DCMAKE_INSTALL_PREFIX=/usr/local && make -s -j2"
 log 'installing ncnn...'
 make -C /home/${target_user}/ncnn/build install 
 
@@ -63,7 +64,7 @@ fi
 
 log 'building nvim-packer-git...'
 sudo -u $target_user bash -c "cd /home/${target_user} && \
-                       git clone https://aur.archlinux.org/nvim-packer-git.git && \
+                       git clone https://aur.archlinux.org/nvim-packer-git.git --quiet && \
                        cd nvim-packer-git && \
                        makepkg"
 
@@ -72,4 +73,5 @@ pacman --noconfirm -U /home/${target_user}/nvim-packer-git/nvim-packer-git*.pkg.
     on_error "on creating or installing nvim-packer-git"
 rm /home/${target_user}/nvim-packer-git -rf || on_error
 
+sed -i s/gpu_mem=16/gpu_mem=128/ /boot/config.txt || error "on changing gpu mem value"
 log 'ending with success.'

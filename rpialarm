@@ -209,8 +209,9 @@ sed -i s/-mno-omit-leaf-frame-pointer//g root/etc/makepkg.conf
 
 mkdir root/home/${target_user} -p
 chown 1000:1000 root/home/${target_user}
-sed -i s/TARGET_USER/${target_user}/g root/etc/passwd
-sed -i s/TARGET_USER/${target_user}/g root/etc/shadow
+sed -i s/TARGET_USER/${target_user}/g root/etc/passwd || on_error
+sed -i s/TARGET_USER/${target_user}/g root/etc/shadow || on_error
+sed -i s/TARGET_USER/${target_user}/g root/etc/group || on_error
 cp -r res/root/home/user/. root/home/${target_user}
 rm -rf root/home/alarm
 echo "ejecting ${device}..."

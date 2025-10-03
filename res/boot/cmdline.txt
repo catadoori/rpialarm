@@ -1,1 +1,1 @@
-root=/dev/mmcblk0p2 rw rootwait  fsck.repair=yes SERIAL_CONSOLE  brcmfmac.feature_disable=0x82000
+root=/dev/mmcblk0p2 rw rootwait  fsck.repair=yes   brcmfmac.feature_disable=0x82000
