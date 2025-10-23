@@ -5,3 +5,6 @@ opencv
 sudo
 fakeroot
 btop
+vtk
+qt6-base
+hdf5
